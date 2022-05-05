@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ethers } from "ethers";
+import { Contract, ethers } from "ethers";
 import abi from "../utils/WavePortal.json";
 import { Wave } from "../utils/wave.interface";
 import { DateTime } from "luxon";
@@ -45,7 +45,9 @@ const Home = () => {
         /*
          * Execute the actual wave from your smart contract
          */
-        const waveTxn = await wavePortalContract.wave(message);
+        const waveTxn = await wavePortalContract.wave(message, {
+          gasLimit: 300000,
+        });
         setMessage({
           message: `Mining… ${waveTxn.hash}`,
           title: `Sending to: ${contractAddress}`,
@@ -121,6 +123,45 @@ const Home = () => {
     checkIfWalletIsConnected();
     getAllWaves();
   }, [wallet]);
+
+  /**
+   * Listen in for emitter events!
+   */
+  useEffect(() => {
+    let wavePortalContract: Contract;
+
+    const onNewWave = (from: string, timestamp: number, message: string) => {
+      console.log("NewWave", from, timestamp, message);
+      setAllWaves((prevState) => [
+        ...prevState,
+        {
+          address: from,
+          timestamp: DateTime.fromMillis(timestamp * 1000).toLocaleString(
+            DateTime.DATETIME_SHORT
+          ),
+          message: message,
+        },
+      ]);
+    };
+
+    if (window.ethereum) {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+
+      wavePortalContract = new ethers.Contract(
+        contractAddress,
+        contractABI,
+        signer
+      );
+      wavePortalContract.on("NewWave", onNewWave);
+    }
+
+    return () => {
+      if (wavePortalContract) {
+        wavePortalContract.off("NewWave", onNewWave);
+      }
+    };
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
